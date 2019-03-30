@@ -38,6 +38,21 @@ func (c *Compiler) Optimize(optLevel, sizeLevel int, inlinerThreshold uint) erro
 		goPasses.AddFunctionAttrsPass()
 		goPasses.Run(c.mod)
 
+		isnil := c.mod.NamedFunction("runtime.isnil")
+		if !isnil.IsNil() {
+			for _, use := range getUses(isnil) {
+				c.builder.SetInsertPointBefore(use)
+				ptr := use.Operand(0)
+				if !ptr.IsABitCastInst().IsNil() {
+					ptr = ptr.Operand(0)
+				}
+				nilptr := llvm.ConstPointerNull(ptr.Type())
+				icmp := c.builder.CreateICmp(llvm.IntEQ, ptr, nilptr, "")
+				use.ReplaceAllUsesWith(icmp)
+				use.EraseFromParentAsInstruction()
+			}
+		}
+
 		// Run Go-specific optimization passes.
 		c.OptimizeMaps()
 		c.OptimizeStringToBytes()
